@@ -1,0 +1,30 @@
+@inherits LayoutComponentBase
+
+<div class="admin-wrapper">
+    <aside class="admin-sidebar">
+        <div class="admin-brand">
+            <span class="logo-placeholder">LOGO</span>
+            <span>@BusinessInfo.Name</span>
+        </div>
+        <nav class="admin-nav">
+            <NavLink href="/admin" Match="NavLinkMatch.All">🏠 Inicio</NavLink>
+            <NavLink href="/admin/citas">🗓️ Citas</NavLink>
+            <NavLink href="/admin/parqueadero">🅿️ Parqueadero</NavLink>
+            <NavLink href="/admin/contabilidad">📊 Contabilidad</NavLink>
+            <NavLink href="/admin/servicios">🧰 Servicios y precios</NavLink>
+            <a href="/" target="_blank">🌐 Ver sitio público</a>
+        </nav>
+        <form method="post" action="/Account/Logout" class="logout-form">
+            <button type="submit" class="btn-logout">Cerrar sesión</button>
+        </form>
+    </aside>
+
+    <div class="admin-content">
+        <header class="admin-topbar">
+            <h1>Panel de administración</h1>
+        </header>
+        <main class="admin-main">
+            @Body
+        </main>
+    </div>
+</div>

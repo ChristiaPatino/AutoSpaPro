@@ -1,0 +1,185 @@
+@page "/agendar"
+@layout AutoSpaPro.Components.Layout.MainLayout
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<section class="booking-section">
+    <div class="container booking-container">
+        <div class="booking-intro">
+            <p class="hero-eyebrow">Agenda en línea</p>
+            <h1>Reserva tu cita</h1>
+            <p>Elige el servicio, la fecha y la hora que más te convenga. Te confirmamos por WhatsApp.</p>
+        </div>
+
+        @if (Confirmed)
+        {
+            <div class="booking-confirmation">
+                <h2>¡Listo, @LastBooking!.Name! 🎉</h2>
+                <p>Tu cita quedó registrada para el <strong>@LastBooking!.Date.ToString("dd/MM/yyyy")</strong> a las
+                    <strong>@LastBooking!.Time.ToString(@"hh\:mm")</strong>. Te contactaremos por WhatsApp para confirmar.</p>
+                <a class="btn-whatsapp" target="_blank" href="@BuildWhatsAppConfirmLink()">Avisar por WhatsApp ahora</a>
+                <button class="btn-outline" style="margin-left:12px;" @onclick="ResetForm">Agendar otra cita</button>
+            </div>
+        }
+        else
+        {
+            <EditForm Model="Form" OnValidSubmit="Submit" class="customer-form booking-form">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="form-grid">
+                    <label>
+                        Nombre completo
+                        <InputText @bind-Value="Form.Name" />
+                    </label>
+                    <label>
+                        Teléfono WhatsApp
+                        <InputText @bind-Value="Form.Phone" placeholder="3001234567" />
+                    </label>
+                    <label>
+                        Tipo de vehículo
+                        <InputSelect @bind-Value="Form.VehicleType">
+                            <option value="@VehicleType.Carro">Carro</option>
+                            <option value="@VehicleType.Moto">Moto</option>
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Placa
+                        <InputText @bind-Value="Form.Plate" />
+                    </label>
+                    <label>
+                        Servicio
+                        <InputSelect @bind-Value="Form.ServiceItemId" @bind-Value:after="OnServiceOrDateChanged">
+                            <option value="0">Selecciona un servicio</option>
+                            @foreach (var s in AvailableServices)
+                            {
+                                <option value="@s.Id">@s.Name — $@s.Price.ToString("N0")</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Fecha
+                        <InputDate @bind-Value="Form.Date" @bind-Value:after="OnServiceOrDateChanged" min="@(DateTime.Today.ToString("yyyy-MM-dd"))" />
+                    </label>
+                </div>
+
+                <label>
+                    Hora disponible
+                    @if (AvailableTimes.Count == 0)
+                    {
+                        <p class="empty-state small">No hay horarios disponibles ese día. Elige otra fecha.</p>
+                    }
+                    else
+                    {
+                        <div class="time-slots">
+                            @foreach (var slot in AvailableTimes)
+                            {
+                                <button type="button" class="time-slot @(Form.Time == slot ? "selected" : "")"
+                                        @onclick="() => Form.Time = slot">
+                                    @slot.ToString(@"hh\:mm")
+                                </button>
+                            }
+                        </div>
+                    }
+                </label>
+
+                <div class="form-actions" style="margin-top:18px;">
+                    <button type="submit" class="btn-primary" disabled="@(Form.Time == default)">Confirmar reserva</button>
+                </div>
+            </EditForm>
+        }
+    </div>
+</section>
+
+@code {
+    private class BookingForm
+    {
+        [Required(ErrorMessage = "El nombre es obligatorio")]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "El teléfono es obligatorio")]
+        public string Phone { get; set; } = string.Empty;
+
+        public VehicleType VehicleType { get; set; } = VehicleType.Carro;
+
+        [Required(ErrorMessage = "La placa es obligatoria")]
+        public string Plate { get; set; } = string.Empty;
+
+        [Range(1, int.MaxValue, ErrorMessage = "Selecciona un servicio")]
+        public int ServiceItemId { get; set; }
+
+        public DateTime Date { get; set; } = DateTime.Today;
+
+        public TimeSpan Time { get; set; }
+    }
+
+    private record BookingSummary(string Name, DateTime Date, TimeSpan Time, string Phone, string ServiceName);
+
+    private BookingForm Form { get; set; } = new();
+    private List<ServiceItem> AvailableServices { get; set; } = [];
+    private List<TimeSpan> AvailableTimes { get; set; } = [];
+    private bool Confirmed { get; set; }
+    private BookingSummary? LastBooking { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        AvailableServices = await db.ServiceItems.Where(s => s.Active).OrderBy(s => s.Name).ToListAsync();
+        await RefreshAvailableTimes();
+    }
+
+    private async Task OnServiceOrDateChanged()
+    {
+        Form.Time = default;
+        await RefreshAvailableTimes();
+    }
+
+    private async Task RefreshAvailableTimes()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existing = await db.Appointments.Where(a => a.AppointmentDate.Date == Form.Date.Date).ToListAsync();
+        AvailableTimes = AppointmentSlots.AvailableSlots(Form.Date, existing);
+    }
+
+    private async Task Submit()
+    {
+        var service = AvailableServices.FirstOrDefault(s => s.Id == Form.ServiceItemId);
+        if (service is null || Form.Time == default) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var appointment = new Appointment
+        {
+            CustomerName = Form.Name,
+            Phone = Form.Phone,
+            VehicleType = Form.VehicleType,
+            Plate = Form.Plate,
+            ServiceItemId = service.Id,
+            AppointmentDate = Form.Date.Date,
+            AppointmentTime = Form.Time,
+            Status = AppointmentStatus.Pendiente,
+            Price = service.Price
+        };
+        db.Appointments.Add(appointment);
+        await db.SaveChangesAsync();
+
+        LastBooking = new BookingSummary(Form.Name, Form.Date, Form.Time, Form.Phone, service.Name);
+        Confirmed = true;
+    }
+
+    private string BuildWhatsAppConfirmLink()
+    {
+        if (LastBooking is null) return "#";
+        var message = $"Hola, soy {LastBooking.Name}. Acabo de agendar {LastBooking.ServiceName} para el " +
+                      $"{LastBooking.Date:dd/MM/yyyy} a las {LastBooking.Time:hh\\:mm}. ¡Gracias!";
+        return $"https://wa.me/{BusinessInfo.WhatsAppNumber}?text={System.Net.WebUtility.UrlEncode(message)}";
+    }
+
+    private void ResetForm()
+    {
+        Form = new BookingForm();
+        Confirmed = false;
+        LastBooking = null;
+        _ = RefreshAvailableTimes();
+    }
+}

@@ -1,0 +1,115 @@
+@page "/admin/servicios"
+@layout AutoSpaPro.Components.Layout.AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<div class="home-panel-header">
+    <h2>Servicios y precios</h2>
+    <button class="btn-primary" @onclick="StartNew">+ Nuevo servicio</button>
+</div>
+
+@if (Editing is not null)
+{
+    <EditForm Model="Editing" OnValidSubmit="Save" class="customer-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="form-grid">
+            <label>
+                Nombre del servicio
+                <InputText @bind-Value="Editing.Name" />
+            </label>
+            <label>
+                Precio ($)
+                <InputNumber @bind-Value="Editing.Price" />
+            </label>
+            <label>
+                Duración (minutos)
+                <InputNumber @bind-Value="Editing.DurationMinutes" />
+            </label>
+            <label class="checkbox-label">
+                <InputCheckbox @bind-Value="Editing.Active" />
+                Activo (visible para agendar)
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary">Guardar</button>
+            <button type="button" class="btn-outline" @onclick="() => Editing = null">Cancelar</button>
+        </div>
+    </EditForm>
+}
+
+<div class="table-wrapper" style="margin-top:20px;">
+    <table class="customers-table">
+        <thead>
+            <tr>
+                <th>Servicio</th>
+                <th>Precio</th>
+                <th>Duración</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var service in Services)
+            {
+                <tr>
+                    <td>@service.Name</td>
+                    <td>$@service.Price.ToString("N0")</td>
+                    <td>@service.DurationMinutes min</td>
+                    <td>
+                        <span class="badge @(service.Active ? "badge-aldia" : "badge-vencido")">
+                            @(service.Active ? "Activo" : "Inactivo")
+                        </span>
+                    </td>
+                    <td class="actions-cell">
+                        <button class="btn-outline small" @onclick="() => Edit(service)">Editar</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<ServiceItem> Services { get; set; } = [];
+    private ServiceItem? Editing { get; set; }
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        Services = await db.ServiceItems.OrderBy(s => s.Name).ToListAsync();
+    }
+
+    private void StartNew() => Editing = new ServiceItem();
+
+    private void Edit(ServiceItem service) => Editing = new ServiceItem
+    {
+        Id = service.Id,
+        Name = service.Name,
+        Price = service.Price,
+        DurationMinutes = service.DurationMinutes,
+        Active = service.Active
+    };
+
+    private async Task Save()
+    {
+        if (Editing is null) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (Editing.Id == 0)
+        {
+            db.ServiceItems.Add(Editing);
+        }
+        else
+        {
+            db.ServiceItems.Update(Editing);
+        }
+        await db.SaveChangesAsync();
+
+        Editing = null;
+        await Load();
+    }
+}

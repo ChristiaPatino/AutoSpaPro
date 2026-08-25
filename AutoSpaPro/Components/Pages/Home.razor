@@ -1,0 +1,58 @@
+@page "/"
+@layout AutoSpaPro.Components.Layout.MainLayout
+
+<section class="hero">
+    <div class="hero-overlay"></div>
+    <div class="container hero-content">
+        <p class="hero-eyebrow">Lavadero &amp; Parqueadero para Carros y Motos</p>
+        <h1>@BusinessInfo.Slogan</h1>
+        <p class="hero-claim">@BusinessInfo.ResultsClaim</p>
+        <div class="hero-actions">
+            <a href="/agendar" class="btn-primary">Agendar cita en línea</a>
+            <a href="https://wa.me/@BusinessInfo.WhatsAppNumber?text=Hola,%20quiero%20más%20información"
+               target="_blank" class="btn-secondary">Cotizar por WhatsApp</a>
+        </div>
+    </div>
+</section>
+
+<section id="servicios" class="services">
+    <div class="container">
+        <h2>Servicios Premium</h2>
+        <div class="services-grid">
+            @foreach (var servicio in BusinessInfo.Services)
+            {
+                <div class="service-card">
+                    <span class="service-icon">✔</span>
+                    <span>@servicio</span>
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
+<section class="parking-highlight">
+    <div class="container parking-inner">
+        <div>
+            <h2>Parqueadero seguro para carros y motos</h2>
+            <p>
+                Deja tu vehículo con nosotros mientras trabajas o sales de viaje. Manejamos planes
+                mensuales con recordatorios de pago, para que nunca se te pase la fecha.
+            </p>
+        </div>
+        <div class="parking-badge">🅿️</div>
+    </div>
+</section>
+
+<section id="contacto" class="contact">
+    <div class="container contact-inner">
+        <div>
+            <h2>Contáctanos</h2>
+            <p><strong>Dirección:</strong> @BusinessInfo.Address</p>
+            <p><strong>Teléfonos:</strong> @BusinessInfo.Phone1 · @BusinessInfo.Phone2</p>
+        </div>
+        <a href="https://wa.me/@BusinessInfo.WhatsAppNumber?text=Hola,%20quiero%20más%20información"
+           target="_blank" class="btn-whatsapp large">
+            Escríbenos ahora
+        </a>
+    </div>
+</section>

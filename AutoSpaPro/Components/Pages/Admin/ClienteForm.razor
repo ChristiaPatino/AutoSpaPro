@@ -1,0 +1,105 @@
+@page "/admin/clientes/nuevo"
+@page "/admin/clientes/{Id:int}"
+@layout AutoSpaPro.Components.Layout.AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+
+<h2>@(Id is null ? "Nuevo cliente de parqueadero" : "Editar cliente")</h2>
+
+<EditForm Model="@Customer" OnValidSubmit="Save" class="customer-form">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="form-grid">
+        <label>
+            Nombre completo
+            <InputText @bind-Value="Customer.FullName" />
+        </label>
+
+        <label>
+            Teléfono WhatsApp (ej: 573001234567)
+            <InputText @bind-Value="Customer.Phone" placeholder="573001234567" />
+        </label>
+
+        <label>
+            Tipo de vehículo
+            <InputSelect @bind-Value="Customer.VehicleType">
+                <option value="@VehicleType.Carro">Carro</option>
+                <option value="@VehicleType.Moto">Moto</option>
+            </InputSelect>
+        </label>
+
+        <label>
+            Placa
+            <InputText @bind-Value="Customer.Plate" />
+        </label>
+
+        <label>
+            Valor mensual ($)
+            <InputNumber @bind-Value="Customer.MonthlyFee" />
+        </label>
+
+        <label>
+            Día de pago (1-31)
+            <InputNumber @bind-Value="Customer.PaymentDueDay" />
+        </label>
+
+        <label>
+            Fecha de inicio
+            <InputDate @bind-Value="Customer.StartDate" />
+        </label>
+
+        <label>
+            Último pago (opcional)
+            <InputDate @bind-Value="Customer.LastPaymentDate" />
+        </label>
+    </div>
+
+    <label class="notes-field">
+        Notas
+        <InputTextArea @bind-Value="Customer.Notes" />
+    </label>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Guardar</button>
+        <a href="/admin/parqueadero" class="btn-outline">Cancelar</a>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private ParkingCustomer Customer { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is not null)
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existing = await db.ParkingCustomers.FindAsync(Id.Value);
+            if (existing is not null)
+            {
+                Customer = existing;
+            }
+        }
+    }
+
+    private async Task Save()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (Id is null)
+        {
+            db.ParkingCustomers.Add(Customer);
+        }
+        else
+        {
+            db.ParkingCustomers.Update(Customer);
+        }
+
+        await db.SaveChangesAsync();
+        Navigation.NavigateTo("/admin/parqueadero");
+    }
+}

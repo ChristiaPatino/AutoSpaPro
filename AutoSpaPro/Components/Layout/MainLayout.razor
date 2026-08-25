@@ -1,0 +1,41 @@
+@inherits LayoutComponentBase
+
+<div class="page-wrapper">
+    <header class="navbar">
+        <div class="container navbar-inner">
+            <a href="/" class="brand">
+                <span class="logo-placeholder" title="Espacio reservado para el logo del cliente">LOGO</span>
+                <span class="brand-name">@BusinessInfo.Name</span>
+            </a>
+            <nav class="nav-links">
+                <a href="/#servicios">Servicios</a>
+                <a href="/agendar" class="btn-book">Agendar cita</a>
+                <a href="/#contacto">Contacto</a>
+                <a href="/admin" class="btn-admin">Panel del cliente</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        @Body
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <div>
+                <strong>@BusinessInfo.Name</strong>
+                <p>@BusinessInfo.Address</p>
+            </div>
+            <div>
+                <p>📞 @BusinessInfo.Phone1</p>
+                <p>📞 @BusinessInfo.Phone2</p>
+            </div>
+            <div>
+                <a href="https://wa.me/@BusinessInfo.WhatsAppNumber" target="_blank" class="btn-whatsapp">
+                    Escríbenos por WhatsApp
+                </a>
+            </div>
+        </div>
+        <p class="copyright">© @DateTime.Now.Year @BusinessInfo.Name — Prototipo de sitio web</p>
+    </footer>
+</div>

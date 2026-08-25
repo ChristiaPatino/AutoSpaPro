@@ -1,0 +1,105 @@
+@* Gráfica de barras agrupadas, sin dependencias JS.
+   El SVG se arma como texto en C# y se vuelca con MarkupString, para evitar que el
+   parser de Razor confunda el elemento SVG <text> con su propia palabra reservada "text". *@
+
+<div class="chart-wrapper">
+    @((MarkupString)BuildSvg())
+
+    <div class="chart-legend">
+        @foreach (var s in Series)
+        {
+            <span class="legend-item"><span class="legend-dot" style="background:var(@s.ColorVar)"></span>@s.Name</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<string> Labels { get; set; } = [];
+    [Parameter, EditorRequired] public List<ChartSeries> Series { get; set; } = [];
+    [Parameter] public int Height { get; set; } = 260;
+
+    private const int MarginLeft = 60;
+    private const int MarginBottom = 34;
+    private const int MarginTop = 16;
+    private const int GroupWidth = 110;
+
+    private int PlotHeight => Height - MarginTop - MarginBottom;
+    private int ChartWidth => MarginLeft + Math.Max(1, Labels.Count) * GroupWidth + 20;
+
+    private decimal MaxValue
+    {
+        get
+        {
+            var max = Series.SelectMany(s => s.Values).DefaultIfEmpty(0).Max();
+            return max <= 0 ? 1 : max;
+        }
+    }
+
+    private double BarHeight(decimal value) => (double)(value / MaxValue) * PlotHeight;
+
+    private double SlotWidth => (double)GroupWidth / Math.Max(1, Series.Count + 1);
+
+    private double BarX(int labelIndex, int seriesIndex) =>
+        MarginLeft + labelIndex * GroupWidth + (seriesIndex + 0.5) * SlotWidth - (BarWidth / 2);
+
+    private double BarWidth => SlotWidth * 0.75;
+
+    private IEnumerable<decimal> GridValues()
+    {
+        for (var i = 0; i <= 4; i++)
+        {
+            yield return MaxValue * i / 4;
+        }
+    }
+
+    private static string FormatShort(decimal value)
+    {
+        if (value >= 1_000_000) return $"${value / 1_000_000:0.#}M";
+        if (value >= 1_000) return $"${value / 1_000:0}K";
+        return $"${value:0}";
+    }
+
+    private static string Enc(string text) => System.Net.WebUtility.HtmlEncode(text);
+
+    private string BuildSvg()
+    {
+        var sb = new System.Text.StringBuilder();
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+
+        sb.Append($"<svg viewBox=\"0 0 {ChartWidth} {Height}\" class=\"bar-chart\" role=\"img\" aria-label=\"Gráfica comparativa mensual\">");
+
+        // Líneas de referencia horizontales + etiquetas del eje Y
+        foreach (var value in GridValues())
+        {
+            var y = MarginTop + (PlotHeight - (double)(value / MaxValue) * PlotHeight);
+            var yStr = y.ToString("F1", ic);
+            sb.Append($"<line x1=\"{MarginLeft}\" y1=\"{yStr}\" x2=\"{ChartWidth - 10}\" y2=\"{yStr}\" class=\"grid-line\" />");
+            sb.Append($"<text x=\"{MarginLeft - 8}\" y=\"{(y + 4).ToString("F1", ic)}\" class=\"axis-label\" text-anchor=\"end\">{Enc(FormatShort(value))}</text>");
+        }
+
+        // Barras + etiquetas del eje X
+        for (var li = 0; li < Labels.Count; li++)
+        {
+            for (var si = 0; si < Series.Count; si++)
+            {
+                var value = Series[si].Values.Count > li ? Series[si].Values[li] : 0;
+                var barHeight = BarHeight(value);
+                var x = BarX(li, si);
+                var y = MarginTop + (PlotHeight - barHeight);
+                var title = Enc($"{Series[si].Name} — {Labels[li]}: ${value:N0}");
+
+                sb.Append($"<rect x=\"{x.ToString("F1", ic)}\" y=\"{y.ToString("F1", ic)}\" " +
+                          $"width=\"{BarWidth.ToString("F1", ic)}\" height=\"{barHeight.ToString("F1", ic)}\" " +
+                          $"rx=\"3\" fill=\"var({Series[si].ColorVar})\"><title>{title}</title></rect>");
+            }
+
+            var labelX = MarginLeft + li * GroupWidth + GroupWidth / 2.0;
+            sb.Append($"<text x=\"{labelX.ToString("F1", ic)}\" y=\"{Height - 10}\" class=\"axis-label\" text-anchor=\"middle\">{Enc(Labels[li])}</text>");
+        }
+
+        sb.Append($"<line x1=\"{MarginLeft}\" y1=\"{MarginTop + PlotHeight}\" x2=\"{ChartWidth - 10}\" y2=\"{MarginTop + PlotHeight}\" class=\"axis-line\" />");
+        sb.Append("</svg>");
+
+        return sb.ToString();
+    }
+}

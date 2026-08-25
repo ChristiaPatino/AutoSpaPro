@@ -1,0 +1,125 @@
+@page "/admin/contabilidad"
+@layout AutoSpaPro.Components.Layout.AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<div class="home-panel">
+    <div class="home-panel-header">
+        <h2>Ingresos — últimos @MonthsToShow meses</h2>
+    </div>
+
+    <GroupedBarChart Labels="MonthLabels" Series="Series" Height="300" />
+
+    <div class="summary-cards" style="margin-top:22px;">
+        <div class="summary-card aldia">
+            <span class="summary-number">$@TotalWashRevenue.ToString("N0")</span>
+            <span>Total en lavados</span>
+        </div>
+        <div class="summary-card proximo">
+            <span class="summary-number">$@TotalParkingRevenue.ToString("N0")</span>
+            <span>Total en parqueadero</span>
+        </div>
+        <div class="summary-card" style="border-top-color:var(--navy);">
+            <span class="summary-number">$@((TotalWashRevenue + TotalParkingRevenue).ToString("N0"))</span>
+            <span>Total general</span>
+        </div>
+    </div>
+</div>
+
+<div class="home-panel">
+    <div class="home-panel-header">
+        <h2>Detalle por mes</h2>
+    </div>
+    <div class="table-wrapper">
+        <table class="customers-table">
+            <thead>
+                <tr>
+                    <th>Mes</th>
+                    <th>Lavados</th>
+                    <th>Parqueadero</th>
+                    <th>Total</th>
+                    <th>Variación vs. mes anterior</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < MonthLabels.Count; i++)
+                {
+                    var wash = Series[0].Values[i];
+                    var parking = Series[1].Values[i];
+                    var total = wash + parking;
+                    var prevTotal = i > 0 ? Series[0].Values[i - 1] + Series[1].Values[i - 1] : (decimal?)null;
+                    <tr>
+                        <td>@MonthLabels[i]</td>
+                        <td>$@wash.ToString("N0")</td>
+                        <td>$@parking.ToString("N0")</td>
+                        <td><strong>$@total.ToString("N0")</strong></td>
+                        <td>@Variation(total, prevTotal)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private const int MonthsToShow = 6;
+
+    private List<string> MonthLabels { get; set; } = [];
+    private List<ChartSeries> Series { get; set; } = [];
+    private decimal TotalWashRevenue { get; set; }
+    private decimal TotalParkingRevenue { get; set; }
+
+    private static readonly System.Globalization.CultureInfo CultureEs = new("es-CO");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var months = Enumerable.Range(0, MonthsToShow)
+            .Select(i => new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-(MonthsToShow - 1) + i))
+            .ToList();
+
+        MonthLabels = months.Select(m => Capitalize(m.ToString("MMM yyyy", CultureEs))).ToList();
+
+        var washByMonth = new List<decimal>();
+        var parkingByMonth = new List<decimal>();
+
+        foreach (var month in months)
+        {
+            var start = month;
+            var end = month.AddMonths(1);
+
+            var wash = await db.Appointments
+                .Where(a => a.Status == AppointmentStatus.Completada && a.AppointmentDate >= start && a.AppointmentDate < end)
+                .SumAsync(a => (decimal?)a.Price) ?? 0;
+
+            var parking = await db.PaymentRecords
+                .Where(p => p.PaymentDate >= start && p.PaymentDate < end)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+            washByMonth.Add(wash);
+            parkingByMonth.Add(parking);
+        }
+
+        TotalWashRevenue = washByMonth.Sum();
+        TotalParkingRevenue = parkingByMonth.Sum();
+
+        Series =
+        [
+            new ChartSeries("Lavados", "--steel", washByMonth),
+            new ChartSeries("Parqueadero", "--sheen", parkingByMonth)
+        ];
+    }
+
+    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
+
+    private static MarkupString Variation(decimal current, decimal? previous)
+    {
+        if (previous is null or 0) return new MarkupString("—");
+        var change = (current - previous.Value) / previous.Value * 100;
+        var arrow = change >= 0 ? "▲" : "▼";
+        var cssClass = change >= 0 ? "variation-up" : "variation-down";
+        return new MarkupString($"<span class=\"{cssClass}\">{arrow} {Math.Abs(change).ToString("0.#")}%</span>");
+    }
+}

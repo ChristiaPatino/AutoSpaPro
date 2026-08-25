@@ -1,0 +1,143 @@
+@page "/admin/parqueadero"
+@layout AutoSpaPro.Components.Layout.AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+
+<div class="dashboard-toolbar">
+    <div class="summary-cards">
+        <div class="summary-card vencido">
+            <span class="summary-number">@Customers.Count(c => c.Status == PaymentStatus.Vencido)</span>
+            <span>Vencidos</span>
+        </div>
+        <div class="summary-card proximo">
+            <span class="summary-number">@Customers.Count(c => c.Status == PaymentStatus.ProximoAVencer)</span>
+            <span>Próximos a vencer (≤3 días)</span>
+        </div>
+        <div class="summary-card aldia">
+            <span class="summary-number">@Customers.Count(c => c.Status == PaymentStatus.AlDia)</span>
+            <span>Al día</span>
+        </div>
+    </div>
+    <a href="/admin/clientes/nuevo" class="btn-primary">+ Nuevo cliente</a>
+</div>
+
+@if (Customers.Count == 0)
+{
+    <p class="empty-state">Todavía no hay clientes registrados en el parqueadero.</p>
+}
+else
+{
+    <div class="table-wrapper">
+        <table class="customers-table">
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>Vehículo</th>
+                    <th>Placa</th>
+                    <th>Valor mensual</th>
+                    <th>Próximo pago</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var customer in Customers.OrderBy(c => c.DaysUntilDue))
+                {
+                    <tr>
+                        <td>
+                            @customer.FullName
+                            <div class="phone-small">@customer.Phone</div>
+                        </td>
+                        <td>@(customer.VehicleType == VehicleType.Carro ? "🚗 Carro" : "🏍️ Moto")</td>
+                        <td>@customer.Plate</td>
+                        <td>$@customer.MonthlyFee.ToString("N0")</td>
+                        <td>
+                            @customer.NextDueDate.ToString("dd/MM/yyyy")
+                            <div class="days-small">@DaysLabel(customer.DaysUntilDue)</div>
+                        </td>
+                        <td><span class="badge @StatusCss(customer.Status)">@StatusLabel(customer.Status)</span></td>
+                        <td class="actions-cell">
+                            <a class="btn-whatsapp small" target="_blank"
+                               href="@WhatsAppService.BuildReminderLink(customer)">
+                                Recordar por WhatsApp
+                            </a>
+                            <button class="btn-outline small" @onclick="() => MarkAsPaid(customer)">
+                                Registrar pago
+                            </button>
+                            <a class="btn-outline small" href="@($"/admin/clientes/{customer.Id}")">Editar</a>
+                            <button class="btn-danger small" @onclick="() => DeleteCustomer(customer)">Eliminar</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<ParkingCustomer> Customers { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCustomers();
+    }
+
+    private async Task LoadCustomers()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        Customers = await db.ParkingCustomers.Where(c => c.Active).ToListAsync();
+    }
+
+    private async Task MarkAsPaid(ParkingCustomer customer)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.ParkingCustomers.FindAsync(customer.Id);
+        if (entity is null) return;
+
+        entity.LastPaymentDate = DateTime.Today;
+        db.PaymentRecords.Add(new PaymentRecord
+        {
+            ParkingCustomerId = entity.Id,
+            PaymentDate = DateTime.Today,
+            Amount = entity.MonthlyFee
+        });
+
+        await db.SaveChangesAsync();
+        await LoadCustomers();
+    }
+
+    private async Task DeleteCustomer(ParkingCustomer customer)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.ParkingCustomers.FindAsync(customer.Id);
+        if (entity is null) return;
+
+        entity.Active = false; // borrado lógico, conserva el historial
+        await db.SaveChangesAsync();
+        await LoadCustomers();
+    }
+
+    private static string StatusLabel(PaymentStatus status) => status switch
+    {
+        PaymentStatus.Vencido => "Vencido",
+        PaymentStatus.ProximoAVencer => "Próximo a vencer",
+        _ => "Al día"
+    };
+
+    private static string StatusCss(PaymentStatus status) => status switch
+    {
+        PaymentStatus.Vencido => "badge-vencido",
+        PaymentStatus.ProximoAVencer => "badge-proximo",
+        _ => "badge-aldia"
+    };
+
+    private static string DaysLabel(int days) => days switch
+    {
+        < 0 => $"venció hace {Math.Abs(days)} día(s)",
+        0 => "vence hoy",
+        1 => "vence mañana",
+        _ => $"faltan {days} días"
+    };
+}

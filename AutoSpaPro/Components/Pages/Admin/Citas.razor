@@ -1,0 +1,170 @@
+@page "/admin/citas"
+@layout AutoSpaPro.Components.Layout.AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<div class="citas-toolbar">
+    <div class="month-nav">
+        <button class="btn-outline small" @onclick="PreviousMonth">← Mes anterior</button>
+        <h2>@CurrentMonth.ToString("MMMM yyyy", CultureEs)</h2>
+        <button class="btn-outline small" @onclick="NextMonth">Mes siguiente →</button>
+    </div>
+</div>
+
+<div class="calendar-grid">
+    @foreach (var dow in DayHeaders)
+    {
+        <div class="calendar-dow">@dow</div>
+    }
+    @foreach (var day in CalendarDays)
+    {
+        var isSelected = day.Date == SelectedDate.Date;
+        var isCurrentMonth = day.Month == CurrentMonth.Month;
+        <button class="calendar-day @(isSelected ? "selected" : "") @(isCurrentMonth ? "" : "muted") @(day.Date == DateTime.Today ? "today" : "")"
+                @onclick="() => SelectedDate = day">
+            <span class="day-number">@day.Day</span>
+            @if (CountForDay(day) > 0)
+            {
+                <span class="day-dot">@CountForDay(day)</span>
+            }
+        </button>
+    }
+</div>
+
+<div class="home-panel">
+    <div class="home-panel-header">
+        <h2>Citas del @SelectedDate.ToString("dddd d 'de' MMMM", CultureEs)</h2>
+        <a href="/agendar" target="_blank" class="link-more">+ Agendar nueva (vista pública) →</a>
+    </div>
+
+    @if (SelectedDayAppointments.Count == 0)
+    {
+        <p class="empty-state small">No hay citas para este día.</p>
+    }
+    else
+    {
+        <div class="table-wrapper">
+            <table class="customers-table">
+                <thead>
+                    <tr>
+                        <th>Hora</th>
+                        <th>Cliente</th>
+                        <th>Vehículo</th>
+                        <th>Servicio</th>
+                        <th>Valor</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in SelectedDayAppointments.OrderBy(a => a.AppointmentTime))
+                    {
+                        <tr>
+                            <td class="phone-small">@a.AppointmentTime.ToString(@"hh\:mm")</td>
+                            <td>@a.CustomerName<div class="phone-small">@a.Phone</div></td>
+                            <td>@(a.VehicleType == VehicleType.Carro ? "🚗" : "🏍️") @a.Plate</td>
+                            <td>@a.ServiceItem?.Name</td>
+                            <td>$@a.Price.ToString("N0")</td>
+                            <td><span class="badge @AppointmentCss(a.Status)">@a.Status</span></td>
+                            <td class="actions-cell">
+                                @if (a.Status == AppointmentStatus.Pendiente)
+                                {
+                                    <button class="btn-outline small" @onclick="() => ChangeStatus(a, AppointmentStatus.Confirmada)">Confirmar</button>
+                                }
+                                @if (a.Status is AppointmentStatus.Pendiente or AppointmentStatus.Confirmada)
+                                {
+                                    <button class="btn-outline small" @onclick="() => ChangeStatus(a, AppointmentStatus.Completada)">Marcar completada</button>
+                                    <button class="btn-danger small" @onclick="() => ChangeStatus(a, AppointmentStatus.Cancelada)">Cancelar</button>
+                                }
+                                <a class="btn-whatsapp small" target="_blank"
+                                   href="@BuildWhatsAppLink(a)">WhatsApp</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo CultureEs = new("es-CO");
+    private static readonly string[] DayHeaders = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+    private DateTime CurrentMonth { get; set; } = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime SelectedDate { get; set; } = DateTime.Today;
+    private List<Appointment> MonthAppointments { get; set; } = [];
+
+    private List<Appointment> SelectedDayAppointments =>
+        MonthAppointments.Where(a => a.AppointmentDate.Date == SelectedDate.Date).ToList();
+
+    private List<DateTime> CalendarDays { get; set; } = [];
+
+    protected override async Task OnInitializedAsync() => await LoadMonth();
+
+    private async Task LoadMonth()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var firstDayOfGrid = FirstDayOfWeek(CurrentMonth);
+        CalendarDays = Enumerable.Range(0, 42).Select(i => firstDayOfGrid.AddDays(i)).ToList();
+
+        var rangeStart = CalendarDays.First();
+        var rangeEnd = CalendarDays.Last();
+
+        MonthAppointments = await db.Appointments
+            .Include(a => a.ServiceItem)
+            .Where(a => a.AppointmentDate >= rangeStart && a.AppointmentDate <= rangeEnd)
+            .ToListAsync();
+    }
+
+    private static DateTime FirstDayOfWeek(DateTime monthStart)
+    {
+        // Semana empieza en lunes
+        var diff = ((int)monthStart.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        return monthStart.AddDays(-diff);
+    }
+
+    private int CountForDay(DateTime day) =>
+        MonthAppointments.Count(a => a.AppointmentDate.Date == day.Date && a.Status != AppointmentStatus.Cancelada);
+
+    private async Task PreviousMonth()
+    {
+        CurrentMonth = CurrentMonth.AddMonths(-1);
+        await LoadMonth();
+    }
+
+    private async Task NextMonth()
+    {
+        CurrentMonth = CurrentMonth.AddMonths(1);
+        await LoadMonth();
+    }
+
+    private async Task ChangeStatus(Appointment appointment, AppointmentStatus newStatus)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.Appointments.FindAsync(appointment.Id);
+        if (entity is null) return;
+
+        entity.Status = newStatus;
+        await db.SaveChangesAsync();
+        await LoadMonth();
+    }
+
+    private static string AppointmentCss(AppointmentStatus status) => status switch
+    {
+        AppointmentStatus.Completada => "badge-aldia",
+        AppointmentStatus.Cancelada => "badge-vencido",
+        AppointmentStatus.Confirmada => "badge-proximo",
+        _ => "badge-pendiente"
+    };
+
+    private static string BuildWhatsAppLink(Appointment a)
+    {
+        var digits = new string(a.Phone.Where(char.IsDigit).ToArray());
+        var message = $"Hola {a.CustomerName} 👋, te confirmamos tu cita de {a.ServiceItem?.Name} el " +
+                      $"{a.AppointmentDate:dd/MM/yyyy} a las {a.AppointmentTime:hh\\:mm}. ¡Te esperamos! - {BusinessInfo.Name}";
+        return $"https://wa.me/{digits}?text={System.Net.WebUtility.UrlEncode(message)}";
+    }
+}

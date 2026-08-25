@@ -1,0 +1,124 @@
+@page "/admin"
+@layout AutoSpaPro.Components.Layout.AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<div class="home-grid">
+    <div class="stat-card">
+        <span class="stat-label">Ingresos este mes</span>
+        <span class="stat-value">$@RevenueThisMonth.ToString("N0")</span>
+        <span class="stat-sub">Lavados + parqueadero</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Citas de hoy</span>
+        <span class="stat-value">@AppointmentsToday.Count</span>
+        <span class="stat-sub">@PendingToday pendientes por confirmar</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Parqueaderos por vencer</span>
+        <span class="stat-value">@DueSoonCount</span>
+        <span class="stat-sub">En los próximos 3 días</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Parqueaderos vencidos</span>
+        <span class="stat-value stat-danger">@OverdueCount</span>
+        <span class="stat-sub">Requieren recordatorio ya</span>
+    </div>
+</div>
+
+<div class="home-columns">
+    <div class="home-panel">
+        <div class="home-panel-header">
+            <h2>Citas de hoy</h2>
+            <a href="/admin/citas" class="link-more">Ver calendario completo →</a>
+        </div>
+        @if (AppointmentsToday.Count == 0)
+        {
+            <p class="empty-state small">No hay citas agendadas para hoy.</p>
+        }
+        else
+        {
+            <ul class="mini-list">
+                @foreach (var a in AppointmentsToday.OrderBy(a => a.AppointmentTime))
+                {
+                    <li>
+                        <span class="mini-list-time">@a.AppointmentTime.ToString(@"hh\:mm")</span>
+                        <span>@a.CustomerName — @a.ServiceItem?.Name</span>
+                        <span class="badge @AppointmentCss(a.Status)">@a.Status</span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+
+    <div class="home-panel">
+        <div class="home-panel-header">
+            <h2>Parqueadero: próximos a vencer</h2>
+            <a href="/admin/parqueadero" class="link-more">Ver todos →</a>
+        </div>
+        @if (UpcomingDue.Count == 0)
+        {
+            <p class="empty-state small">Nadie vence pronto. 🎉</p>
+        }
+        else
+        {
+            <ul class="mini-list">
+                @foreach (var c in UpcomingDue)
+                {
+                    <li>
+                        <span>@c.FullName — @c.Plate</span>
+                        <span class="badge @(c.Status == PaymentStatus.Vencido ? "badge-vencido" : "badge-proximo")">
+                            @(c.Status == PaymentStatus.Vencido ? "Vencido" : $"En {c.DaysUntilDue} día(s)")
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+</div>
+
+@code {
+    private List<Appointment> AppointmentsToday { get; set; } = [];
+    private List<ParkingCustomer> UpcomingDue { get; set; } = [];
+    private decimal RevenueThisMonth { get; set; }
+    private int DueSoonCount { get; set; }
+    private int OverdueCount { get; set; }
+    private int PendingToday => AppointmentsToday.Count(a => a.Status == AppointmentStatus.Pendiente);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        AppointmentsToday = await db.Appointments
+            .Include(a => a.ServiceItem)
+            .Where(a => a.AppointmentDate.Date == DateTime.Today && a.Status != AppointmentStatus.Cancelada)
+            .ToListAsync();
+
+        var customers = await db.ParkingCustomers.Where(c => c.Active).ToListAsync();
+        UpcomingDue = customers
+            .Where(c => c.Status != PaymentStatus.AlDia)
+            .OrderBy(c => c.DaysUntilDue)
+            .Take(6)
+            .ToList();
+        DueSoonCount = customers.Count(c => c.Status == PaymentStatus.ProximoAVencer);
+        OverdueCount = customers.Count(c => c.Status == PaymentStatus.Vencido);
+
+        var firstOfMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var washRevenue = await db.Appointments
+            .Where(a => a.Status == AppointmentStatus.Completada && a.AppointmentDate >= firstOfMonth)
+            .SumAsync(a => (decimal?)a.Price) ?? 0;
+        var parkingRevenue = await db.PaymentRecords
+            .Where(p => p.PaymentDate >= firstOfMonth)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+        RevenueThisMonth = washRevenue + parkingRevenue;
+    }
+
+    private static string AppointmentCss(AppointmentStatus status) => status switch
+    {
+        AppointmentStatus.Completada => "badge-aldia",
+        AppointmentStatus.Cancelada => "badge-vencido",
+        AppointmentStatus.Confirmada => "badge-proximo",
+        _ => "badge-pendiente"
+    };
+}

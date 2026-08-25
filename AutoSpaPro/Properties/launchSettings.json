@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "AutoSpaPro": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:57430;http://localhost:57431"
+    }
+  }
+}

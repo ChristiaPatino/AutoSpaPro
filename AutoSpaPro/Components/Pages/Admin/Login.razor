@@ -1,0 +1,44 @@
+@page "/admin/login"
+@layout AutoSpaPro.Components.Layout.MainLayout
+@inject NavigationManager Navigation
+
+<section class="login-section">
+    <div class="login-card">
+        <div class="logo-placeholder large">LOGO</div>
+        <h1>Panel del cliente</h1>
+        <p class="login-subtitle">Ingresa para gestionar los clientes del parqueadero</p>
+
+        @if (ShowError)
+        {
+            <div class="login-error">Usuario o contraseña incorrectos.</div>
+        }
+
+        <form method="post" action="/Account/Login">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+            <label>
+                Usuario
+                <input type="text" name="username" required autofocus />
+            </label>
+
+            <label>
+                Contraseña
+                <input type="password" name="password" required />
+            </label>
+
+            <button type="submit" class="btn-primary full-width">Ingresar</button>
+        </form>
+
+        <p class="login-hint">Prototipo — usuario: <code>admin</code> / contraseña: <code>admin123</code></p>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    private bool ShowError => Error == "1";
+}
